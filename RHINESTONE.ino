@@ -3,11 +3,13 @@ uint8_t SENSOR_UCS = 4; //Digital Pin for Pushbutton Switch
 uint8_t SENSOR_DS = 2; //Analog Pin for Reading Accelerometer
 uint8_t ACTUATOR_SL = 3; //Digital Pin for LED
 
-float CONSTANT_UPWARD_DT;
-float CONSTANT_DOWNWARD_DT;
-float CONSTANT_DEBOUNCETIME;
-float CONSTANT_STRAIGHTANDLEVELRANGE;
-float CONSTANT_GRAVITY;
+float CONSTANT_UPWARD_DT = 0.05;
+float CONSTANT_DOWNWARD_DT = 0.05;
+long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
+float CONSTANT_STRAIGHTANDLEVELRANGE = 0.05;
+float CONSTANT_GRAVITY = 0.3;  //flat, not moving = 1.59, straight down = 1.29
+float CONSTANT_ZERO_READING = 1.59;
+const float pi = 3.14159;
 const uint8_t VARIABLE_QUEUE_DECELERATION_SIZE = 5;
 
 uint8_t VARIABLE_UPDOWN;
@@ -15,25 +17,42 @@ float VARIABLE_COMPENSATED_DECELERATION;
 String VARIABLE_CURRENT_MODE;
 float VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE];
 float VARIABLE_QUEUE_RANGE;
-float VARIABLE_COMPUTED_PITCHANGLE;
-uint8_t VARIABLE_SAMPLE_RATE;
-uint8_t VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE;
+float VARIABLE_COMPUTED_PITCHANGLE; // in radians.  Arduino trig functions default to radians.
+float VARIABLE_SAMPLE_RATE;
+float VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE;
 
 
 void setup()
 {
 	pinMode(ACTUATOR_SL, OUTPUT);
-        Serial.begin(9600);
+	pinMode(SENSOR_UCS, INPUT);
+        //Serial.begin(9600);
 	BOOT();
+	TRANSITION_TO_SLEEP();
 }
 
 void loop()
 {
-    digitalWrite(ACTUATOR_SL,HIGH);
-    delay(1000);
-    digitalWrite(ACTUATOR_SL,LOW);
-    delay(1000);
-    Serial.println(analogRead(SENSOR_DS));
+	//Debouncing done in this function
+	if(digitalRead(SENSOR_UCS) == 0)
+	{
+		delay(CONSTANT_DEBOUNCETIME);
+		if(digitalRead(SENSOR_UCS) == 0)
+		{
+			if(VARIABLE_CURRENT_MODE == "mode_normal")
+			{
+				TRANSITION_TO_SLEEP();
+			}
+			else if(VARIABLE_CURRENT_MODE == "mode_sleep")
+			{
+				TRANSITION_TO_NORMAL();
+			}
+		}
+	}
+	else if(VARIABLE_CURRENT_MODE == "mode_normal") //Go back to mode_normal if button not pressed
+	{
+		MODE_NORMAL();
+	}
 }
 
 void BOOT()
@@ -43,8 +62,8 @@ void BOOT()
 	VARIABLE_CURRENT_MODE = "boot";
 	VARIABLE_QUEUE_RANGE = 0;
 	VARIABLE_COMPUTED_PITCHANGLE = 0;
-	VARIABLE_SAMPLE_RATE = 10;
-	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 1;
+	VARIABLE_SAMPLE_RATE = 50;
+	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 0.5;
 
 	for(uint8_t i = 0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
 	{
@@ -55,8 +74,8 @@ void BOOT()
 void TRANSITION_TO_SLEEP()
 {
 	VARIABLE_CURRENT_MODE = "transition_to_sleep";
-	//deactivate all circuitry
 	SLEEP_SIGNAL();
+	MODE_SLEEP();
 }
 
 void MODE_SLEEP()
@@ -68,26 +87,33 @@ void TRANSITION_TO_NORMAL()
 {
 	VARIABLE_CURRENT_MODE = "transition_to_normal";
 	NORMAL_SIGNAL();
+	MODE_NORMAL();
 }
 
 void MODE_NORMAL()
 {
         uint16_t sample;
-        unsigned long time;
-        float min_val = 0;
-        float max_val = 0;
+        unsigned long sample_time; //initial sample time
+        unsigned long decision_time = millis(); //initial decision time
+        float min_val = 0; //used to calculate data range
+        float max_val = 0; //used to calculate data range
         float mean = 0;
         float range;
-	VARIABLE_CURRENT_MODE = "mode_normal";
+        VARIABLE_CURRENT_MODE = "mode_normal";
+        //Serial.println("Entered Normal Mode");
 
+        //Sampling loop
         for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
         {
-            time  = millis();
+            sample_time  = millis();
             sample = analogRead(SENSOR_DS); //this takes roughly 100us
-            VARIABLE_QUEUE_DECELERATION[i] = (sample/1024)*5;
-            while(millis() - time < (1/VARIABLE_SAMPLE_RATE));
+            VARIABLE_QUEUE_DECELERATION[i] = ((float(sample)/float(1024))*5) - CONSTANT_ZERO_READING;
+            while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
         }
         
+        //Serial.println("Done Sampling");
+        
+        //Calculate range and mean of sampled data
         min_val = VARIABLE_QUEUE_DECELERATION[0];
         max_val = VARIABLE_QUEUE_DECELERATION[0];
         mean = VARIABLE_QUEUE_DECELERATION[0];
@@ -106,34 +132,43 @@ void MODE_NORMAL()
         mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE;
         range = max_val - min_val;
         
+        //Determine if event occured based on mean and range
         if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
         {
-            VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY); 
+            VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY);//*(180/pi);
+            Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
         }
         else
         {
-            VARIABLE_COMPENSATED_DECELERATION = (mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
+            VARIABLE_COMPENSATED_DECELERATION = abs(mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
+            //Serial.println(VARIABLE_COMPENSATED_DECELERATION);
+            //Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
+            //Serial.println(mean);
             if((VARIABLE_UPDOWN == 0)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_UPWARD_DT))
             {
+                Serial.println("Upward");
                 TRANSITION_ACTIVATE_ACTUATOR_SL();
             }
-            else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION < CONSTANT_DOWNWARD_DT))
+            else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_DOWNWARD_DT))
             {
+                Serial.println("Downward");
                 TRANSITION_DEACTIVATE_ACTUATOR_SL();
             }    
         }
+
+        while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
 }
 
 void TRANSITION_ACTIVATE_ACTUATOR_SL()
 {
-	VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
+	//VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
 	BRAKING_SIGNAL_ON();
 	VARIABLE_UPDOWN = 1;
 }
 
 void TRANSITION_DEACTIVATE_ACTUATOR_SL()
 {
-	VARIABLE_CURRENT_MODE = "transition_deactivate_actuator_sl";
+	//VARIABLE_CURRENT_MODE = "transition_deactivate_actuator_sl";
 	BRAKING_SIGNAL_OFF();
 	VARIABLE_UPDOWN = 0;
 }
@@ -143,17 +178,17 @@ void SLEEP_SIGNAL()
     unsigned long time = millis();
     
     digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis - time < 200);
+    while(millis() - time < 200);
     digitalWrite(ACTUATOR_SL,LOW);
     delay(50);
     digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis - time < 100);
+    while(millis() - time < 100);
     digitalWrite(ACTUATOR_SL,LOW);
     delay(50);
     digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis - time < 50);
+    while(millis() - time < 50);
     digitalWrite(ACTUATOR_SL,LOW);
-    while(millis - time < 1000);
+    while(millis() - time < 1000);
 }
 
 void NORMAL_SIGNAL()
@@ -161,17 +196,18 @@ void NORMAL_SIGNAL()
     unsigned long time = millis();
     
     digitalWrite(ACTUATOR_SL,LOW);
-    while(millis - time < 200);
+    while(millis() - time < 200);
     digitalWrite(ACTUATOR_SL,HIGH);
     delay(50);
     digitalWrite(ACTUATOR_SL,LOW);
-    while(millis - time < 100);
+    while(millis() - time < 100);
     digitalWrite(ACTUATOR_SL,HIGH);
     delay(50);
     digitalWrite(ACTUATOR_SL,LOW);
-    while(millis - time < 50);
+    while(millis() - time < 50);
     digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis - time < 1000);
+    while(millis() - time < 1000);
+    digitalWrite(ACTUATOR_SL,LOW);
 }
 
 void BRAKING_SIGNAL_ON()
