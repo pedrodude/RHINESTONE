@@ -1,6 +1,17 @@
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_ADXL345_U.h>
+
+uint8_t clock = 11;
+uint8_t miso = 12;
+uint8_t mosi = 13;
+uint8_t cs = 10;
+
+/* Assign a unique ID to this sensor at the same time */
+Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(clock, miso, mosi, cs, 12345);
 
 uint8_t SENSOR_UCS = 4; //Digital Pin for Pushbutton Switch
-uint8_t SENSOR_DS = 2; //Analog Pin for Reading Accelerometer
+//uint8_t SENSOR_DS = 2; //Analog Pin for Reading Accelerometer
 uint8_t ACTUATOR_SL = 3; //Digital Pin for LED
 
 float CONSTANT_UPWARD_DT = 0.05;
@@ -24,6 +35,19 @@ float VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE; // in Hz
 
 void setup()
 {
+	if(!accel.begin())
+	{
+	/* There was a problem detecting the ADXL345 ... check your connections */
+	Serial.println("Ooops, no ADXL345 detected ... Check your wiring!");
+	while(1);
+	}
+
+	/* Set the range to whatever is appropriate for your project */
+	accel.setRange(ADXL345_RANGE_16_G);
+	// displaySetRange(ADXL345_RANGE_8_G);
+	// displaySetRange(ADXL345_RANGE_4_G);
+	// displaySetRange(ADXL345_RANGE_2_G);
+
 	pinMode(ACTUATOR_SL, OUTPUT);
 	pinMode(SENSOR_UCS, INPUT);
         //Serial.begin(9600);
@@ -92,7 +116,7 @@ void TRANSITION_TO_NORMAL()
 
 void MODE_NORMAL()
 {
-        uint16_t sample;
+        //float sample;
         unsigned long sample_time; //initial sample time
         unsigned long decision_time = millis(); //initial decision time
         float min_val = 0; //used to calculate data range
@@ -101,13 +125,16 @@ void MODE_NORMAL()
         float range;
         VARIABLE_CURRENT_MODE = "mode_normal";
         //Serial.println("Entered Normal Mode");
+        sensors_event_t event;
+        accel.getEvent(&event);
 
         //Sampling loop
         for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
         {
             sample_time  = millis();
-            sample = analogRead(SENSOR_DS); //this takes roughly 100us
-            VARIABLE_QUEUE_DECELERATION[i] = ((float(sample)/float(1024))*5) - CONSTANT_ZERO_READING;
+            //sample = analogRead(SENSOR_DS); //this takes roughly 100us
+            VARIABLE_QUEUE_DECELERATION[i] = event.acceleration.y;
+            //VARIABLE_QUEUE_DECELERATION[i] = ((float(sample)/float(1024))*5) - CONSTANT_ZERO_READING;
             while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
         }
         
