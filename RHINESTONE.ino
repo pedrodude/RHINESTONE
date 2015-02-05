@@ -36,6 +36,9 @@ float VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE; // in Hz
 void setup()
 {
 	Serial.begin(9600);
+	while(!Serial);
+
+
 	if(!accel.begin())
 	{
 	/* There was a problem detecting the ADXL345 ... check your connections */
