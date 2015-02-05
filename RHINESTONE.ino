@@ -2,9 +2,9 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
 
-uint8_t clock = 11;
-uint8_t miso = 12;
-uint8_t mosi = 13;
+uint8_t clock = 15;
+uint8_t miso = 16;
+uint8_t mosi = 14;
 uint8_t cs = 10;
 
 /* Assign a unique ID to this sensor at the same time */
@@ -37,7 +37,11 @@ void setup()
 {
 	Serial.begin(9600);
 	while(!Serial);
+        digitalWrite(ACTUATOR_SL,HIGH);
+        delay(50);
+        digitalWrite(ACTUATOR_SL,LOW);
 
+        Serial.println("Apparently I'm powered up v4");
 
 	if(!accel.begin())
 	{
@@ -86,7 +90,8 @@ void loop()
 
 void BOOT()
 {
-	VARIABLE_UPDOWN = 0;
+	Serial.println("BOOT ROUTINE");
+        VARIABLE_UPDOWN = 0;
 	VARIABLE_COMPENSATED_DECELERATION = 0;
 	VARIABLE_CURRENT_MODE = "boot";
 	VARIABLE_QUEUE_RANGE = 0;
@@ -102,18 +107,21 @@ void BOOT()
 
 void TRANSITION_TO_SLEEP()
 {
-	VARIABLE_CURRENT_MODE = "transition_to_sleep";
+	Serial.println("TRANSITION_TO_SLEEP ROUTINE");
+        VARIABLE_CURRENT_MODE = "transition_to_sleep";
 	SLEEP_SIGNAL();
 	MODE_SLEEP();
 }
 
 void MODE_SLEEP()
 {
-	VARIABLE_CURRENT_MODE = "mode_sleep";
+	Serial.println("MODE_SLEEP ROUTINE");
+        VARIABLE_CURRENT_MODE = "mode_sleep";
 }
 
 void TRANSITION_TO_NORMAL()
 {
+	Serial.println("TRANSITION_TO_NORMAL ROUTINE");
 	VARIABLE_CURRENT_MODE = "transition_to_normal";
 	NORMAL_SIGNAL();
 	MODE_NORMAL();
@@ -121,6 +129,7 @@ void TRANSITION_TO_NORMAL()
 
 void MODE_NORMAL()
 {
+	Serial.println("MODE_NORMAL ROUTINE");
         //float sample;
         unsigned long sample_time; //initial sample time
         unsigned long decision_time = millis(); //initial decision time
@@ -193,13 +202,15 @@ void MODE_NORMAL()
 
 void TRANSITION_ACTIVATE_ACTUATOR_SL()
 {
-	//VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
+	Serial.println("TRANSITION_ACTIVATE_ACTUATOR_SL ROUTINE");
+//VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
 	BRAKING_SIGNAL_ON();
 	VARIABLE_UPDOWN = 1;
 }
 
 void TRANSITION_DEACTIVATE_ACTUATOR_SL()
 {
+	Serial.println("TRANSITION_DEACTIVATE_ACTUATOR_SL ROUTINE");
 	//VARIABLE_CURRENT_MODE = "transition_deactivate_actuator_sl";
 	BRAKING_SIGNAL_OFF();
 	VARIABLE_UPDOWN = 0;
@@ -207,6 +218,7 @@ void TRANSITION_DEACTIVATE_ACTUATOR_SL()
 
 void SLEEP_SIGNAL()
 {
+    Serial.println("SLEEP_SIGNAL ROUTINE");
     unsigned long time = millis();
     
     digitalWrite(ACTUATOR_SL,HIGH);
@@ -225,6 +237,7 @@ void SLEEP_SIGNAL()
 
 void NORMAL_SIGNAL()
 {
+    Serial.println("NORMAL_SIGNAL ROUTINE");
     unsigned long time = millis();
     
     digitalWrite(ACTUATOR_SL,LOW);
@@ -244,10 +257,12 @@ void NORMAL_SIGNAL()
 
 void BRAKING_SIGNAL_ON()
 {
+    Serial.println("BRAKING_SIGNAL_ON ROUTINE");
     digitalWrite(ACTUATOR_SL,HIGH);
 }
 
 void BRAKING_SIGNAL_OFF()
 {
+    Serial.println("BRAKING_SIGNAL_OFF ROUTINE");
     digitalWrite(ACTUATOR_SL,LOW);
 }
