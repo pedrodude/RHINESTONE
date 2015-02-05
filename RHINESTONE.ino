@@ -10,9 +10,9 @@ uint8_t cs = 10;
 /* Assign a unique ID to this sensor at the same time */
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(clock, miso, mosi, cs, 12345);
 
-uint8_t SENSOR_UCS = 4; //Digital Pin for Pushbutton Switch
+uint8_t SENSOR_UCS = 8; //Digital Pin for Pushbutton Switch
 //uint8_t SENSOR_DS = 2; //Analog Pin for Reading Accelerometer
-uint8_t ACTUATOR_SL = 3; //Digital Pin for LED
+uint8_t ACTUATOR_SL = 9; //Digital Pin for LED
 
 float CONSTANT_UPWARD_DT = 0.05;
 float CONSTANT_DOWNWARD_DT = 0.05;
@@ -35,6 +35,7 @@ float VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE; // in Hz
 
 void setup()
 {
+	Serial.begin(9600);
 	if(!accel.begin())
 	{
 	/* There was a problem detecting the ADXL345 ... check your connections */
@@ -57,6 +58,7 @@ void setup()
 
 void loop()
 {
+	Serial.println("I'm alive!");
 	//Debouncing done in this function
 	if(digitalRead(SENSOR_UCS) == 0)
 	{
