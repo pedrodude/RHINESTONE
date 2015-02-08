@@ -2,9 +2,9 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
 
-uint8_t clock = 15;
-uint8_t miso = 16;
-uint8_t mosi = 14;
+uint8_t clock = 15; // aka SCL
+uint8_t miso = 16; // aka SDA
+uint8_t mosi = 14; // aka SDO
 uint8_t cs = 10;
 
 /* Assign a unique ID to this sensor at the same time */
