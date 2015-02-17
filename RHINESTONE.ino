@@ -17,7 +17,7 @@ uint8_t ACTUATOR_SL = 9; //Digital Pin for LED
 float CONSTANT_UPWARD_DT = 0.05;
 float CONSTANT_DOWNWARD_DT = 0.05;
 long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
-float CONSTANT_STRAIGHTANDLEVELRANGE = 0.05;
+float CONSTANT_STRAIGHTANDLEVELRANGE = 0.5; //was 0.05
 float CONSTANT_GRAVITY = 0.3;  //flat, not moving = 1.59, straight down = 1.29
 float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
@@ -65,7 +65,7 @@ void setup()
 
 void loop()
 {
-	Serial.println("I'm alive!");
+	Serial.println("Monitoring for UCS");
 	//Debouncing done in this function
 	if(digitalRead(SENSOR_UCS) == 0)
 	{
@@ -139,15 +139,19 @@ void MODE_NORMAL()
         float range;
         VARIABLE_CURRENT_MODE = "mode_normal";
         //Serial.println("Entered Normal Mode");
-        sensors_event_t event;
-        accel.getEvent(&event);
+        //sensors_event_t event; //moved these to within the loop
+        //accel.getEvent(&event); //moved these to within the loop
 
         //Sampling loop
         for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
         {
             sample_time  = millis();
+            sensors_event_t event;
+            accel.getEvent(&event);
             //sample = analogRead(SENSOR_DS); //this takes roughly 100us
-            VARIABLE_QUEUE_DECELERATION[i] = event.acceleration.y;
+            VARIABLE_QUEUE_DECELERATION[i] = event.acceleration.x; //was y axis
+            Serial.print("Uncompensated acceleration reading: ");
+            Serial.println(VARIABLE_QUEUE_DECELERATION[i]);
             //VARIABLE_QUEUE_DECELERATION[i] = ((float(sample)/float(1024))*5) - CONSTANT_ZERO_READING;
             while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
         }
@@ -171,18 +175,28 @@ void MODE_NORMAL()
             mean = mean + VARIABLE_QUEUE_DECELERATION[i];
         }
         mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE;
+        Serial.print("Queue mean: ");
+        Serial.println(mean);
         range = max_val - min_val;
+        Serial.print("Queue range: ");
+        Serial.println(range);
+        Serial.print("Straight and level range (from Constant): ");
+        Serial.println(CONSTANT_STRAIGHTANDLEVELRANGE);
         
         //Determine if event occured based on mean and range
         if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
         {
+            Serial.println("Queue range indicates insignificant deceleration, updating pitch angle");
             VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY);//*(180/pi);
+            Serial.print("Pitch Angle: ");
             Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
         }
         else
         {
+            Serial.println("Queue range indicates significant deceleration, calculating compensated deceleration");
             VARIABLE_COMPENSATED_DECELERATION = abs(mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
-            //Serial.println(VARIABLE_COMPENSATED_DECELERATION);
+            Serial.print("Compensated deceleration: ");
+            Serial.println(VARIABLE_COMPENSATED_DECELERATION);
             //Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
             //Serial.println(mean);
             if((VARIABLE_UPDOWN == 0)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_UPWARD_DT))
