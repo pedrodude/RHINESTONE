@@ -23,6 +23,7 @@ float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
 const uint8_t VARIABLE_QUEUE_DECELERATION_SIZE = 5;
 
+uint8_t FIFO_STATUS;
 uint8_t VARIABLE_UPDOWN;
 float VARIABLE_COMPENSATED_DECELERATION;
 String VARIABLE_CURRENT_MODE;
@@ -98,6 +99,7 @@ void BOOT()
 	VARIABLE_COMPUTED_PITCHANGLE = 0;
 	VARIABLE_SAMPLE_RATE = 50;
 	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 0.5;
+	FIFO_STATUS = 0;
 
 	for(uint8_t i = 0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
 	{
@@ -142,23 +144,32 @@ void MODE_NORMAL()
         sensors_event_t event;
         accel.getEvent(&event);
 
-        //Sampling loop
-        for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
+        sample_time  = millis();
+
+        //FIFO not full
+        if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
         {
-            sample_time  = millis();
-            //sample = analogRead(SENSOR_DS); //this takes roughly 100us
-            VARIABLE_QUEUE_DECELERATION[i] = event.acceleration.y;
-            //VARIABLE_QUEUE_DECELERATION[i] = ((float(sample)/float(1024))*5) - CONSTANT_ZERO_READING;
-            while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
+        	VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.y;
+        	FIFO_STATUS++;
         }
-        
-        //Serial.println("Done Sampling");
+        else  //FIFO full, new value removes old value
+        {
+        	//Shift FIFO values down one space
+        	for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-2; i++)
+        	{
+        		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
+        	}
+        	//Add new value to end of FIFO
+        	VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.y;
+        }
+        //Maintain fixed sample rate
+        while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
         
         //Calculate range and mean of sampled data
         min_val = VARIABLE_QUEUE_DECELERATION[0];
         max_val = VARIABLE_QUEUE_DECELERATION[0];
         mean = VARIABLE_QUEUE_DECELERATION[0];
-        for(uint8_t i=1; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
+        for(uint8_t i=1; i<FIFO_STATUS; i++)
         {
             if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
             {
@@ -170,7 +181,7 @@ void MODE_NORMAL()
             }
             mean = mean + VARIABLE_QUEUE_DECELERATION[i];
         }
-        mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE;
+        mean = mean/FIFO_STATUS;
         range = max_val - min_val;
         
         //Determine if event occured based on mean and range
