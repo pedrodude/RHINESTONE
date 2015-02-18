@@ -23,6 +23,7 @@ float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
 const uint8_t VARIABLE_QUEUE_DECELERATION_SIZE = 5;
 
+uint8_t FIFO_STATUS;
 uint8_t VARIABLE_UPDOWN;
 float VARIABLE_COMPENSATED_DECELERATION;
 String VARIABLE_CURRENT_MODE;
@@ -41,7 +42,7 @@ void setup()
         delay(50);
         digitalWrite(ACTUATOR_SL,LOW);
 
-        Serial.println("Apparently I'm powered up v4");
+        Serial.println("Apparently I'm powered up v5");
 
 	if(!accel.begin())
 	{
@@ -91,14 +92,15 @@ void loop()
 void BOOT()
 {
 	Serial.println("BOOT ROUTINE");
-        VARIABLE_UPDOWN = 0;
+	VARIABLE_UPDOWN = 0;
 	VARIABLE_COMPENSATED_DECELERATION = 0;
 	VARIABLE_CURRENT_MODE = "boot";
 	VARIABLE_QUEUE_RANGE = 0;
 	VARIABLE_COMPUTED_PITCHANGLE = 0;
 	VARIABLE_SAMPLE_RATE = 50;
-	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 0.5;
-
+	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 1; //was 0.5
+	FIFO_STATUS = 0;
+	
 	for(uint8_t i = 0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
 	{
 		VARIABLE_QUEUE_DECELERATION[i] = 0;
@@ -139,30 +141,50 @@ void MODE_NORMAL()
         float range;
         VARIABLE_CURRENT_MODE = "mode_normal";
         //Serial.println("Entered Normal Mode");
-        //sensors_event_t event; //moved these to within the loop
-        //accel.getEvent(&event); //moved these to within the loop
-
+        sensors_event_t event;
+        accel.getEvent(&event);
+		
+		sample_time  = millis();
         //Sampling loop
-        for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
-        {
-            sample_time  = millis();
-            sensors_event_t event;
-            accel.getEvent(&event);
-            //sample = analogRead(SENSOR_DS); //this takes roughly 100us
-            VARIABLE_QUEUE_DECELERATION[i] = event.acceleration.x; //was y axis
-            Serial.print("Uncompensated acceleration reading: ");
-            Serial.println(VARIABLE_QUEUE_DECELERATION[i]);
-            //VARIABLE_QUEUE_DECELERATION[i] = ((float(sample)/float(1024))*5) - CONSTANT_ZERO_READING;
-            while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
-        }
-        
-        //Serial.println("Done Sampling");
-        
-        //Calculate range and mean of sampled data
+		if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
+		{
+			VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
+			Serial.print("Uncompensated acceleration reading: ");
+			Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
+			Serial.print(" stored at queue location: ");
+			Serial.println(FIFO_STATUS);
+			FIFO_STATUS++;
+		}
+		else //FIFO full, new value removes old value
+		{
+			//Shift FIFO values down one space
+			Serial.println("Queue being updated");
+			for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-1; i++)//was-2
+			{
+        		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
+				Serial.print("|");
+                                Serial.print("i");
+                                Serial.print(i);
+                                Serial.print(":");
+				Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
+        	}
+			//Add new value to end of FIFO
+			Serial.print("|");
+			VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.x;
+                        Serial.print("i");
+                        Serial.print(VARIABLE_QUEUE_DECELERATION_SIZE-1);
+			Serial.print(":");
+                        Serial.print(VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1]);
+                        Serial.println("|");
+		}
+		//Maintain fixed sample rate
+		while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
+		
+		//Calculate range and mean of sampled data
         min_val = VARIABLE_QUEUE_DECELERATION[0];
         max_val = VARIABLE_QUEUE_DECELERATION[0];
         mean = VARIABLE_QUEUE_DECELERATION[0];
-        for(uint8_t i=1; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
+		for(uint8_t i=1; i<FIFO_STATUS; i++)
         {
             if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
             {
@@ -174,16 +196,14 @@ void MODE_NORMAL()
             }
             mean = mean + VARIABLE_QUEUE_DECELERATION[i];
         }
-        mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE;
+		mean = mean/FIFO_STATUS;
         Serial.print("Queue mean: ");
         Serial.println(mean);
         range = max_val - min_val;
         Serial.print("Queue range: ");
         Serial.println(range);
-        Serial.print("Straight and level range (from Constant): ");
-        Serial.println(CONSTANT_STRAIGHTANDLEVELRANGE);
-        
-        //Determine if event occured based on mean and range
+		
+		//Determine if event occured based on mean and range
         if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
         {
             Serial.println("Queue range indicates insignificant deceleration, updating pitch angle");
@@ -210,7 +230,7 @@ void MODE_NORMAL()
                 TRANSITION_DEACTIVATE_ACTUATOR_SL();
             }    
         }
-
+		
         while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
 }
 
