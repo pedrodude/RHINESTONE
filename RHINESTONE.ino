@@ -3,8 +3,8 @@
 #include <Adafruit_ADXL345_U.h>
 
 uint8_t clock = 15; // aka SCL
-uint8_t miso = 16; // aka SDA
-uint8_t mosi = 14; // aka SDO
+uint8_t miso = 14; // aka SDO
+uint8_t mosi = 16; // aka SDA
 uint8_t cs = 10;
 
 /* Assign a unique ID to this sensor at the same time */
@@ -17,7 +17,7 @@ uint8_t ACTUATOR_SL = 9; //Digital Pin for LED
 float CONSTANT_UPWARD_DT = 0.05;
 float CONSTANT_DOWNWARD_DT = 0.05;
 long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
-float CONSTANT_STRAIGHTANDLEVELRANGE = 0.05;
+float CONSTANT_STRAIGHTANDLEVELRANGE = 0.5; //was 0.05
 float CONSTANT_GRAVITY = 0.3;  //flat, not moving = 1.59, straight down = 1.29
 float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
@@ -42,7 +42,7 @@ void setup()
         delay(50);
         digitalWrite(ACTUATOR_SL,LOW);
 
-        Serial.println("Apparently I'm powered up v4");
+        Serial.println("Apparently I'm powered up v5");
 
 	if(!accel.begin())
 	{
@@ -66,7 +66,7 @@ void setup()
 
 void loop()
 {
-	Serial.println("I'm alive!");
+	Serial.println("Monitoring for UCS");
 	//Debouncing done in this function
 	if(digitalRead(SENSOR_UCS) == 0)
 	{
@@ -92,15 +92,15 @@ void loop()
 void BOOT()
 {
 	Serial.println("BOOT ROUTINE");
-        VARIABLE_UPDOWN = 0;
+	VARIABLE_UPDOWN = 0;
 	VARIABLE_COMPENSATED_DECELERATION = 0;
 	VARIABLE_CURRENT_MODE = "boot";
 	VARIABLE_QUEUE_RANGE = 0;
 	VARIABLE_COMPUTED_PITCHANGLE = 0;
 	VARIABLE_SAMPLE_RATE = 50;
-	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 0.5;
+	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 1; //was 0.5
 	FIFO_STATUS = 0;
-
+	
 	for(uint8_t i = 0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
 	{
 		VARIABLE_QUEUE_DECELERATION[i] = 0;
@@ -143,33 +143,48 @@ void MODE_NORMAL()
         //Serial.println("Entered Normal Mode");
         sensors_event_t event;
         accel.getEvent(&event);
+		
+	sample_time  = millis();
 
-        sample_time  = millis();
-
-        //FIFO not full
-        if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
-        {
-        	VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.y;
-        	FIFO_STATUS++;
-        }
-        else  //FIFO full, new value removes old value
-        {
-        	//Shift FIFO values down one space
-        	for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-2; i++)
-        	{
-        		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
-        	}
-        	//Add new value to end of FIFO
-        	VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.y;
-        }
-        //Maintain fixed sample rate
-        while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
-        
-        //Calculate range and mean of sampled data
+	if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
+	{
+		VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
+		Serial.print("Uncompensated acceleration reading: ");
+		Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
+		Serial.print(" stored at queue location: ");
+		Serial.println(FIFO_STATUS);
+		FIFO_STATUS++;
+	}
+	else //FIFO full, new value removes old value
+	{
+		//Shift FIFO values down one space
+		Serial.println("Queue being updated");
+		for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-1; i++)//was-2
+		{
+		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
+			Serial.print("|");
+                        Serial.print("i");
+                        Serial.print(i);
+                        Serial.print(":");
+			Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
+	}
+		//Add new value to end of FIFO
+		Serial.print("|");
+		VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.x;
+                Serial.print("i");
+                Serial.print(VARIABLE_QUEUE_DECELERATION_SIZE-1);
+		Serial.print(":");
+                Serial.print(VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1]);
+                Serial.println("|");
+	}
+	//Maintain fixed sample rate
+	while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
+		
+		//Calculate range and mean of sampled data
         min_val = VARIABLE_QUEUE_DECELERATION[0];
         max_val = VARIABLE_QUEUE_DECELERATION[0];
         mean = VARIABLE_QUEUE_DECELERATION[0];
-        for(uint8_t i=1; i<FIFO_STATUS; i++)
+	for(uint8_t i=1; i<FIFO_STATUS; i++)
         {
             if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
             {
@@ -181,19 +196,28 @@ void MODE_NORMAL()
             }
             mean = mean + VARIABLE_QUEUE_DECELERATION[i];
         }
-        mean = mean/FIFO_STATUS;
+
+	mean = mean/FIFO_STATUS;
+        Serial.print("Queue mean: ");
+        Serial.println(mean);
         range = max_val - min_val;
-        
-        //Determine if event occured based on mean and range
+        Serial.print("Queue range: ");
+        Serial.println(range);
+		
+		//Determine if event occured based on mean and range
         if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
         {
+            Serial.println("Queue range indicates insignificant deceleration, updating pitch angle");
             VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY);//*(180/pi);
+            Serial.print("Pitch Angle: ");
             Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
         }
         else
         {
+            Serial.println("Queue range indicates significant deceleration, calculating compensated deceleration");
             VARIABLE_COMPENSATED_DECELERATION = abs(mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
-            //Serial.println(VARIABLE_COMPENSATED_DECELERATION);
+            Serial.print("Compensated deceleration: ");
+            Serial.println(VARIABLE_COMPENSATED_DECELERATION);
             //Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
             //Serial.println(mean);
             if((VARIABLE_UPDOWN == 0)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_UPWARD_DT))
@@ -207,7 +231,7 @@ void MODE_NORMAL()
                 TRANSITION_DEACTIVATE_ACTUATOR_SL();
             }    
         }
-
+		
         while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
 }
 
