@@ -144,47 +144,47 @@ void MODE_NORMAL()
         sensors_event_t event;
         accel.getEvent(&event);
 		
-		sample_time  = millis();
-        //Sampling loop
-		if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
+	sample_time  = millis();
+
+	if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
+	{
+		VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
+		Serial.print("Uncompensated acceleration reading: ");
+		Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
+		Serial.print(" stored at queue location: ");
+		Serial.println(FIFO_STATUS);
+		FIFO_STATUS++;
+	}
+	else //FIFO full, new value removes old value
+	{
+		//Shift FIFO values down one space
+		Serial.println("Queue being updated");
+		for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-1; i++)//was-2
 		{
-			VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
-			Serial.print("Uncompensated acceleration reading: ");
-			Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
-			Serial.print(" stored at queue location: ");
-			Serial.println(FIFO_STATUS);
-			FIFO_STATUS++;
-		}
-		else //FIFO full, new value removes old value
-		{
-			//Shift FIFO values down one space
-			Serial.println("Queue being updated");
-			for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-1; i++)//was-2
-			{
-        		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
-				Serial.print("|");
-                                Serial.print("i");
-                                Serial.print(i);
-                                Serial.print(":");
-				Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
-        	}
-			//Add new value to end of FIFO
+		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
 			Serial.print("|");
-			VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.x;
                         Serial.print("i");
-                        Serial.print(VARIABLE_QUEUE_DECELERATION_SIZE-1);
-			Serial.print(":");
-                        Serial.print(VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1]);
-                        Serial.println("|");
-		}
-		//Maintain fixed sample rate
-		while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
+                        Serial.print(i);
+                        Serial.print(":");
+			Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
+	}
+		//Add new value to end of FIFO
+		Serial.print("|");
+		VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.x;
+                Serial.print("i");
+                Serial.print(VARIABLE_QUEUE_DECELERATION_SIZE-1);
+		Serial.print(":");
+                Serial.print(VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1]);
+                Serial.println("|");
+	}
+	//Maintain fixed sample rate
+	while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
 		
 		//Calculate range and mean of sampled data
         min_val = VARIABLE_QUEUE_DECELERATION[0];
         max_val = VARIABLE_QUEUE_DECELERATION[0];
         mean = VARIABLE_QUEUE_DECELERATION[0];
-		for(uint8_t i=1; i<FIFO_STATUS; i++)
+	for(uint8_t i=1; i<FIFO_STATUS; i++)
         {
             if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
             {
@@ -196,7 +196,8 @@ void MODE_NORMAL()
             }
             mean = mean + VARIABLE_QUEUE_DECELERATION[i];
         }
-		mean = mean/FIFO_STATUS;
+
+	mean = mean/FIFO_STATUS;
         Serial.print("Queue mean: ");
         Serial.println(mean);
         range = max_val - min_val;
