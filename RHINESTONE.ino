@@ -18,7 +18,7 @@ float CONSTANT_UPWARD_DT = 0.05;
 float CONSTANT_DOWNWARD_DT = 0.05;
 long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
 float CONSTANT_STRAIGHTANDLEVELRANGE = 0.5; //was 0.05
-float CONSTANT_GRAVITY = 0.3;  //flat, not moving = 1.59, straight down = 1.29
+float CONSTANT_GRAVITY = 9.81;  //flat, not moving = 1.59, straight down = 1.29
 float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
 const uint8_t VARIABLE_QUEUE_DECELERATION_SIZE = 5;
@@ -52,7 +52,7 @@ void setup()
 	}
 
 	/* Set the range to whatever is appropriate for your project */
-	accel.setRange(ADXL345_RANGE_16_G);
+	accel.setRange(ADXL345_RANGE_4_G);
 	// displaySetRange(ADXL345_RANGE_8_G);
 	// displaySetRange(ADXL345_RANGE_4_G);
 	// displaySetRange(ADXL345_RANGE_2_G);
