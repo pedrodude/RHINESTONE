@@ -16,7 +16,7 @@ uint8_t ACTUATOR_SL = 9; //Digital Pin for LED
 
 float CONSTANT_UPWARD_DT = 0.05;
 float CONSTANT_DOWNWARD_DT = 0.05;
-long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
+long CONSTANT_DEBOUNCETIME = 2000; // in milliseconds
 float CONSTANT_STRAIGHTANDLEVELRANGE = 0.5; //was 0.05
 float CONSTANT_GRAVITY = 9.81;  //flat, not moving = 1.59, straight down = 1.29
 float CONSTANT_ZERO_READING = 1.59;
@@ -97,8 +97,8 @@ void BOOT()
 	VARIABLE_CURRENT_MODE = "boot";
 	VARIABLE_QUEUE_RANGE = 0;
 	VARIABLE_COMPUTED_PITCHANGLE = 0;
-	VARIABLE_SAMPLE_RATE = 50;
-	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 1; //was 0.5
+	VARIABLE_SAMPLE_RATE = 60;
+	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 1;
 	FIFO_STATUS = 0;
 	
 	for(uint8_t i = 0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
@@ -134,7 +134,7 @@ void MODE_NORMAL()
 	Serial.println("MODE_NORMAL ROUTINE");
         //float sample;
         unsigned long sample_time; //initial sample time
-        unsigned long decision_time = millis(); //initial decision time
+        unsigned long decision_time = millis(); //initial decision time//WHEN IS THIS ASSIGNED
         float min_val = 0; //used to calculate data range
         float max_val = 0; //used to calculate data range
         float mean = 0;
