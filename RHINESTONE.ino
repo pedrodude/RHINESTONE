@@ -14,9 +14,9 @@ uint8_t SENSOR_UCS = 8; //Digital Pin for Pushbutton Switch
 //uint8_t SENSOR_DS = 2; //Analog Pin for Reading Accelerometer
 uint8_t ACTUATOR_SL = 9; //Digital Pin for LED
 
-float CONSTANT_UPWARD_DT = 0.05;
-float CONSTANT_DOWNWARD_DT = 0.05;
-long CONSTANT_DEBOUNCETIME = 2000; // in milliseconds
+float CONSTANT_UPWARD_DT = 0.3;
+float CONSTANT_DOWNWARD_DT = 0.25;
+long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
 float CONSTANT_STRAIGHTANDLEVELRANGE = 0.5; //was 0.05
 float CONSTANT_GRAVITY = 9.81;  //flat, not moving = 1.59, straight down = 1.29
 float CONSTANT_ZERO_READING = 1.59;
@@ -42,7 +42,7 @@ void setup()
         delay(50);
         digitalWrite(ACTUATOR_SL,LOW);
 
-        Serial.println("Apparently I'm powered up v5");
+        Serial.println("Apparently I'm powered up v6");
 
 	if(!accel.begin())
 	{
@@ -134,7 +134,7 @@ void MODE_NORMAL()
 	Serial.println("MODE_NORMAL ROUTINE");
         //float sample;
         unsigned long sample_time; //initial sample time
-        unsigned long decision_time = millis(); //initial decision time//WHEN IS THIS ASSIGNED
+        unsigned long decision_time = millis(); //initial decision time
         float min_val = 0; //used to calculate data range
         float max_val = 0; //used to calculate data range
         float mean = 0;
@@ -148,11 +148,24 @@ void MODE_NORMAL()
 
 	if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
 	{
+                Serial.println("Filling queue");
 		VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
-		Serial.print("Uncompensated acceleration reading: ");
-		Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
-		Serial.print(" stored at queue location: ");
-		Serial.println(FIFO_STATUS);
+		//Serial.print("Uncompensated acceleration reading: ");
+		//Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
+		//Serial.print(" stored at queue location: ");
+		//Serial.println(FIFO_STATUS);
+		
+		//printing queue to screen hopefully
+		for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)//was-1
+		{
+		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
+			Serial.print("|");
+                        Serial.print("i");
+                        Serial.print(i);
+                        Serial.print(":");
+			Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
+		}
+		//end printing queue
 		FIFO_STATUS++;
 	}
 	else //FIFO full, new value removes old value
@@ -167,7 +180,7 @@ void MODE_NORMAL()
                         Serial.print(i);
                         Serial.print(":");
 			Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
-	}
+		}
 		//Add new value to end of FIFO
 		Serial.print("|");
 		VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.x;
@@ -180,11 +193,11 @@ void MODE_NORMAL()
 	//Maintain fixed sample rate
 	while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
 		
-		//Calculate range and mean of sampled data
+	//Calculate range and mean of sampled data
         min_val = VARIABLE_QUEUE_DECELERATION[0];
         max_val = VARIABLE_QUEUE_DECELERATION[0];
         mean = VARIABLE_QUEUE_DECELERATION[0];
-	for(uint8_t i=1; i<FIFO_STATUS; i++)
+	for(uint8_t i=1; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++) //was: for(uint8_t i=1; i<FIFO_STATUS; i++)
         {
             if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
             {
@@ -197,7 +210,8 @@ void MODE_NORMAL()
             mean = mean + VARIABLE_QUEUE_DECELERATION[i];
         }
 
-	mean = mean/FIFO_STATUS;
+	mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE; //was: mean = mean/FIFO_STATUS;
+        Serial.println("");
         Serial.print("Queue mean: ");
         Serial.println(mean);
         range = max_val - min_val;
@@ -225,7 +239,7 @@ void MODE_NORMAL()
                 Serial.println("Upward");
                 TRANSITION_ACTIVATE_ACTUATOR_SL();
             }
-            else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_DOWNWARD_DT))
+            else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION < CONSTANT_DOWNWARD_DT))
             {
                 Serial.println("Downward");
                 TRANSITION_DEACTIVATE_ACTUATOR_SL();
