@@ -14,12 +14,12 @@ uint8_t SENSOR_UCS = 8; //Digital Pin for Pushbutton Switch
 //uint8_t SENSOR_DS = 2; //Analog Pin for Reading Accelerometer
 uint8_t ACTUATOR_SL = 9; //Digital Pin for LED
 
-float CONSTANT_UPWARD_DT = 0.3;
-float CONSTANT_DOWNWARD_DT = 0.25;
+float CONSTANT_UPWARD_DT = 0.5;
+float CONSTANT_DOWNWARD_DT = 0.3;
 long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
 float CONSTANT_STRAIGHTANDLEVELRANGE = 0.5; //was 0.05
 float CONSTANT_GRAVITY = 9.81;  //flat, not moving = 1.59, straight down = 1.29
-float CONSTANT_ZERO_READING = 1.59;
+//float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
 const uint8_t VARIABLE_QUEUE_DECELERATION_SIZE = 5;
 
@@ -62,6 +62,8 @@ void setup()
         //Serial.begin(9600);
 	BOOT();
 	TRANSITION_TO_SLEEP();
+	
+	//Automatically calls loop(), which cycles infinitely
 }
 
 void loop()
@@ -70,9 +72,11 @@ void loop()
 	//Debouncing done in this function
 	if(digitalRead(SENSOR_UCS) == 0)
 	{
+		Serial.println("UCS has been pressed");
 		delay(CONSTANT_DEBOUNCETIME);
 		if(digitalRead(SENSOR_UCS) == 0)
 		{
+			Serial.println("UCS has been pressed for the debounce period");
 			if(VARIABLE_CURRENT_MODE == "mode_normal")
 			{
 				TRANSITION_TO_SLEEP();
@@ -110,7 +114,7 @@ void BOOT()
 void TRANSITION_TO_SLEEP()
 {
 	Serial.println("TRANSITION_TO_SLEEP ROUTINE");
-        VARIABLE_CURRENT_MODE = "transition_to_sleep";
+    VARIABLE_CURRENT_MODE = "transition_to_sleep";
 	SLEEP_SIGNAL();
 	MODE_SLEEP();
 }
@@ -118,7 +122,7 @@ void TRANSITION_TO_SLEEP()
 void MODE_SLEEP()
 {
 	Serial.println("MODE_SLEEP ROUTINE");
-        VARIABLE_CURRENT_MODE = "mode_sleep";
+    VARIABLE_CURRENT_MODE = "mode_sleep";
 }
 
 void TRANSITION_TO_NORMAL()
@@ -133,22 +137,21 @@ void MODE_NORMAL()
 {
 	Serial.println("MODE_NORMAL ROUTINE");
         //float sample;
-        unsigned long sample_time; //initial sample time
-        unsigned long decision_time = millis(); //initial decision time
-        float min_val = 0; //used to calculate data range
-        float max_val = 0; //used to calculate data range
-        float mean = 0;
-        float range;
-        VARIABLE_CURRENT_MODE = "mode_normal";
-        //Serial.println("Entered Normal Mode");
-        sensors_event_t event;
-        accel.getEvent(&event);
+    unsigned long sample_time; //initial sample time
+    unsigned long decision_time = millis(); //initial decision time
+    float min_val = 0; //used to calculate data range
+    float max_val = 0; //used to calculate data range
+    float mean = 0;
+    float range;
+    VARIABLE_CURRENT_MODE = "mode_normal";
+    sensors_event_t event;
+    accel.getEvent(&event);
 		
 	sample_time  = millis();
 
-	if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1)
+	if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1) //does this actually need to exist? - 20150328
 	{
-                Serial.println("Filling queue");
+        Serial.println("Filling queue");
 		VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
 		//Serial.print("Uncompensated acceleration reading: ");
 		//Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
