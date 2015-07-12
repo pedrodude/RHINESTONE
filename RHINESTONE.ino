@@ -33,6 +33,14 @@ float VARIABLE_COMPUTED_PITCHANGLE; // in radians.  Arduino trig functions defau
 float VARIABLE_SAMPLE_RATE; // in Hz
 float VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE; // in Hz
 
+//create and initialise arithmetic and timing variables //new globals from the restructuring of void main()
+sensors_event_t event;
+unsigned long sample_time; //initial sample time
+unsigned long decision_time; //initial decision time //does this need to be started now?  What about sample time?
+float min_val = 0; //used to calculate data range
+float max_val = 0; //used to calculate data range
+float mean = 0;
+float range;
 
 void setup()
 {
@@ -42,7 +50,7 @@ void setup()
         delay(50);
         digitalWrite(ACTUATOR_SL,LOW);
 
-        Serial.println("Apparently I'm powered up v6");
+        Serial.println("Apparently I'm powered up v7");
 
 	if(!accel.begin())
 	{
@@ -136,27 +144,34 @@ void TRANSITION_TO_NORMAL()
 void MODE_NORMAL()
 {
 	Serial.println("MODE_NORMAL ROUTINE");
-        //float sample;
-    unsigned long sample_time; //initial sample time
-    unsigned long decision_time = millis(); //initial decision time
-    float min_val = 0; //used to calculate data range
-    float max_val = 0; //used to calculate data range
-    float mean = 0;
-    float range;
-    VARIABLE_CURRENT_MODE = "mode_normal";
-    sensors_event_t event;
-    accel.getEvent(&event);
-		
-	sample_time  = millis();
+	VARIABLE_CURRENT_MODE = "mode_normal";
 
+	//read sensor data
+	//sensors_event_t event; //temporarily commented to try it as a global
+    accel.getEvent(&event);
+	
+	sample_time  = millis();
+	decision_time  = millis();
+	
+	APPEND_SAMPLE_TO_QUEUE(); //subroutine to append reading to queue
+	if (FIFO_STATUS = VARIABLE_QUEUE_DECELERATION_SIZE-1) //only do arithmetic and accel test when queue is full
+	{
+		CALCULATE_QUEUE_STATISTICS();
+		EVALUATE_DECELERATION();
+	}
+	
+}
+
+void APPEND_SAMPLE_TO_QUEUE()
+{
 	if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE-1) //does this actually need to exist? - 20150328
 	{
         Serial.println("Filling queue");
 		VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
-		//Serial.print("Uncompensated acceleration reading: ");
-		//Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
-		//Serial.print(" stored at queue location: ");
-		//Serial.println(FIFO_STATUS);
+		Serial.print("Uncompensated acceleration reading: ");
+		Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
+		Serial.print(" stored at queue location: ");
+		Serial.println(FIFO_STATUS);
 		
 		//printing queue to screen hopefully
 		for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)//was-1
@@ -195,11 +210,15 @@ void MODE_NORMAL()
 	}
 	//Maintain fixed sample rate
 	while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
-		
+}
+
+void CALCULATE_QUEUE_STATISTICS()
+{
 	//Calculate range and mean of sampled data
-        min_val = VARIABLE_QUEUE_DECELERATION[0];
-        max_val = VARIABLE_QUEUE_DECELERATION[0];
-        mean = VARIABLE_QUEUE_DECELERATION[0];
+    min_val = VARIABLE_QUEUE_DECELERATION[0];
+    max_val = VARIABLE_QUEUE_DECELERATION[0];
+    mean = VARIABLE_QUEUE_DECELERATION[0];
+	
 	for(uint8_t i=1; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++) //was: for(uint8_t i=1; i<FIFO_STATUS; i++)
         {
             if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
@@ -212,44 +231,48 @@ void MODE_NORMAL()
             }
             mean = mean + VARIABLE_QUEUE_DECELERATION[i];
         }
-
+		
 	mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE; //was: mean = mean/FIFO_STATUS;
-        Serial.println("");
-        Serial.print("Queue mean: ");
-        Serial.println(mean);
-        range = max_val - min_val;
-        Serial.print("Queue range: ");
-        Serial.println(range);
+    Serial.println("");
+    Serial.print("Queue mean: ");
+    Serial.println(mean);
+    range = max_val - min_val;
+    Serial.print("Queue range: ");
+    Serial.println(range);
+}
+
+void EVALUATE_DECELERATION()
+{
+//Determine if event occured based on mean and range
+    if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
+    {
+		Serial.println("Queue range indicates insignificant deceleration, updating pitch angle");
+		VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY);//*(180/pi);
+		Serial.print("Pitch Angle: ");
+		Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
+    }
+    else
+    {
+		Serial.println("Queue range indicates significant deceleration, calculating compensated deceleration");
+		VARIABLE_COMPENSATED_DECELERATION = abs(mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
+		Serial.print("Compensated deceleration: ");
+		Serial.println(VARIABLE_COMPENSATED_DECELERATION);
+		//Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
+		//Serial.println(mean);
+    
+		if((VARIABLE_UPDOWN == 0)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_UPWARD_DT))
+		{
+			Serial.println("Upward");
+			TRANSITION_ACTIVATE_ACTUATOR_SL();
+		}
+		else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION < CONSTANT_DOWNWARD_DT))
+		{
+			Serial.println("Downward");
+			TRANSITION_DEACTIVATE_ACTUATOR_SL();
+		}    
+    }
 		
-		//Determine if event occured based on mean and range
-        if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
-        {
-            Serial.println("Queue range indicates insignificant deceleration, updating pitch angle");
-            VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY);//*(180/pi);
-            Serial.print("Pitch Angle: ");
-            Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
-        }
-        else
-        {
-            Serial.println("Queue range indicates significant deceleration, calculating compensated deceleration");
-            VARIABLE_COMPENSATED_DECELERATION = abs(mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
-            Serial.print("Compensated deceleration: ");
-            Serial.println(VARIABLE_COMPENSATED_DECELERATION);
-            //Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
-            //Serial.println(mean);
-            if((VARIABLE_UPDOWN == 0)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_UPWARD_DT))
-            {
-                Serial.println("Upward");
-                TRANSITION_ACTIVATE_ACTUATOR_SL();
-            }
-            else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION < CONSTANT_DOWNWARD_DT))
-            {
-                Serial.println("Downward");
-                TRANSITION_DEACTIVATE_ACTUATOR_SL();
-            }    
-        }
-		
-        while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
+    while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
 }
 
 void TRANSITION_ACTIVATE_ACTUATOR_SL()
