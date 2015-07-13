@@ -50,7 +50,8 @@ void setup()
         delay(50);
         digitalWrite(ACTUATOR_SL,LOW);
 
-        Serial.println("Apparently I'm powered up v7");
+        Serial.print("SETUP ROUTINE: ");
+		Serial.println("Apparently I'm powered up v8");
 
 	if(!accel.begin())
 	{
@@ -76,6 +77,7 @@ void setup()
 
 void loop()
 {
+	Serial.print("LOOP ROUTINE: ");
 	Serial.println("Monitoring for UCS");
 	//Debouncing done in this function
 	if(digitalRead(SENSOR_UCS) == 0)
@@ -148,17 +150,17 @@ void MODE_NORMAL()
 
 	//read sensor data
 	//sensors_event_t event; //temporarily commented to try it as a global
-        accel.getEvent(&event);
+    accel.getEvent(&event);
 	
 	sample_time  = millis();
 	decision_time  = millis();
 	
-        Serial.print("FIFO_STATUS: ");
-        Serial.println(FIFO_STATUS);
+    Serial.print("FIFO_STATUS: ");
+    Serial.println(FIFO_STATUS);
 	APPEND_SAMPLE_TO_QUEUE(); //subroutine to append reading to queue
 	if(FIFO_STATUS == VARIABLE_QUEUE_DECELERATION_SIZE) //only do arithmetic and accel test when queue is full
 	{
-                CALCULATE_QUEUE_STATISTICS();
+        CALCULATE_QUEUE_STATISTICS();
 		EVALUATE_DECELERATION();
 	}
 	
@@ -167,64 +169,40 @@ void MODE_NORMAL()
 void APPEND_SAMPLE_TO_QUEUE()
 {
 	Serial.println("APPEND_SAMPLE_TO_QUEUE ROUTINE");
-        if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE) //20150712 - was -1 //does this actually need to exist? - 20150328
+	
+	//Shift FIFO values down one space
+	Serial.println("Queue being updated");
+	for(uint8_t i=VARIABLE_QUEUE_DECELERATION_SIZE-1; i>0; i--) //for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-1; i++)//was-2
 	{
-        Serial.println("Filling queue");
-		VARIABLE_QUEUE_DECELERATION[FIFO_STATUS] = event.acceleration.x;
-		Serial.print("Uncompensated acceleration reading: ");
-		Serial.print(VARIABLE_QUEUE_DECELERATION[FIFO_STATUS]);
-		Serial.print(" stored at queue location: ");
-		Serial.println(FIFO_STATUS);
-		
-		//printing queue to screen hopefully
-		for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)//was-1
-		{
-                //20150712 QUEUE IS STILL REVERSED LATER ON...
-                        //VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1]; // 20150712 - THIS IS NOT RIGHT SURELY? 
-			Serial.print("|");
-                        Serial.print("i");
-                        Serial.print(i);
-                        Serial.print(":");
-			Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
-		}
-		//end printing queue
-		FIFO_STATUS++;
+		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i-1];
 	}
-	else //FIFO full, new value removes old value
+	
+	//Add new value to beginning of FIFO
+    VARIABLE_QUEUE_DECELERATION[0] = event.acceleration.x;
+    
+	//printing queue to screen hopefully
+	for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)//was-1
 	{
-		//Shift FIFO values down one space
-		Serial.println("Queue being updated");
-		for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-1; i++)//was-2
-		{
-		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i+1];
-			Serial.print("|");
-                        Serial.print("i");
-                        Serial.print(i);
-                        Serial.print(":");
-			Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
-		}
-		//Add new value to end of FIFO
-                VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1] = event.acceleration.x;
-                //Serial.println("");
-                //Serial.print("Uncompensated acceleration reading: ");
-		//Serial.print(VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1]);
-		//Serial.print(" stored at queue location: ");
-		//Serial.println(VARIABLE_QUEUE_DECELERATION_SIZE-1);
-                
-                Serial.print("|");
+		Serial.print("|");
 		Serial.print("i");
-                Serial.print(VARIABLE_QUEUE_DECELERATION_SIZE-1);
+		Serial.print(i);
 		Serial.print(":");
-                Serial.print(VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE-1]);
-                Serial.print("|");
+		Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
 	}
+	Serial.println("");
+        //end printing queue
+	
+        //Update FIFO_STATUS
+        if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE)
+	{
+            FIFO_STATUS++;
+        }
 	//Maintain fixed sample rate
 	while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
 }
 
 void CALCULATE_QUEUE_STATISTICS()
 {
-    Serial.println("");
     Serial.println("CALCULATE_QUEUE_STATISTICS ROUTINE");
     //Calculate range and mean of sampled data
     min_val = VARIABLE_QUEUE_DECELERATION[0];
