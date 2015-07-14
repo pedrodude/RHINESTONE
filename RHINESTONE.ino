@@ -237,33 +237,33 @@ void CALCULATE_QUEUE_STATISTICS()
 void EVALUATE_DECELERATION()
 {
     Serial.println("EVALUATE_DECELERATION ROUTINE");
-    //Determine if event occured based on mean and range
+    //Determine if event occurred based on mean and range
     if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
     {
 		Serial.println("Queue range indicates insignificant deceleration, updating pitch angle");
 		VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY);//*(180/pi);
 		Serial.print("Pitch Angle: ");
 		Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
-    }
+    //20150714 IS THERE ANY REASON THIS ALWAYS SEEMS TO EVALUATE TO 0.03 ON LAST TEST?
+	}
     else
     {
+		//20150714 ONLY IF THE DECELERATION IS "SIGNIFICANT" (i.e. range is wide enough) ARE THE DECISIONS MADE TO TURN LIGHT ON OR OFF.  DOESN'T ACCOUNT FOR THE LIKELY POSSIBILITY THAT LIGHT GETS TURNED ON THEN THE RANGE DROPS AND IT NEVER GETS TURNED OFF...
 		Serial.println("Queue range indicates significant deceleration, calculating compensated deceleration");
 		VARIABLE_COMPENSATED_DECELERATION = abs(mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
 		Serial.print("Compensated deceleration: ");
 		Serial.println(VARIABLE_COMPENSATED_DECELERATION);
-		//Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
-		//Serial.println(mean);
     
 		if((VARIABLE_UPDOWN == 0)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_UPWARD_DT))
 		{
 			Serial.println("Upward");
 			TRANSITION_ACTIVATE_ACTUATOR_SL();
 		}
-		else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION < CONSTANT_DOWNWARD_DT))
+		else if((VARIABLE_UPDOWN == 1)&&(VARIABLE_COMPENSATED_DECELERATION < CONSTANT_DOWNWARD_DT)) //20150714 Any reason this isn't encapsulated in curly braces in the same way as the previous else? 
 		{
 			Serial.println("Downward");
 			TRANSITION_DEACTIVATE_ACTUATOR_SL();
-		}    
+		}
     }
 		
     while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
