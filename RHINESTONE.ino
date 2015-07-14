@@ -149,11 +149,10 @@ void MODE_NORMAL()
 	VARIABLE_CURRENT_MODE = "mode_normal";
 
 	//read sensor data
-	//sensors_event_t event; //temporarily commented to try it as a global
-    accel.getEvent(&event);
+    accel.getEvent(&event);  //20150714 can this go into APPEND routine?  And sensors_event_t?  Get rid of a global?
 	
 	sample_time  = millis();
-	decision_time  = millis();
+	decision_time  = millis(); //20150714 Can I move these out of the subroutines and back into mode_normal to get rid of the globals?
 	
     Serial.print("FIFO_STATUS: ");
     Serial.println(FIFO_STATUS);
@@ -180,6 +179,11 @@ void APPEND_SAMPLE_TO_QUEUE()
 	//Add new value to beginning of FIFO
     VARIABLE_QUEUE_DECELERATION[0] = event.acceleration.x;
     
+	//print value just added
+	Serial.print("Uncompensated acceleration reading: ");
+	Serial.print(VARIABLE_QUEUE_DECELERATION[0]);
+	Serial.println(" inserted to queue.");
+	
 	//printing queue to screen hopefully
 	for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)//was-1
 	{
