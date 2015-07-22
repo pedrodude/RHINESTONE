@@ -14,10 +14,10 @@ uint8_t SENSOR_UCS = 8; //Digital Pin for Pushbutton Switch
 //uint8_t SENSOR_DS = 2; //Analog Pin for Reading Accelerometer
 uint8_t ACTUATOR_SL = 9; //Digital Pin for LED
 
-float CONSTANT_UPWARD_DT = 0.5;
+float CONSTANT_UPWARD_DT = 0.65;
 float CONSTANT_DOWNWARD_DT = 0.3;
 long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
-float CONSTANT_STRAIGHTANDLEVELRANGE = 0.5; //was 0.05
+float CONSTANT_STRAIGHTANDLEVELRANGE = 0.2; //was 0.05
 float CONSTANT_GRAVITY = 9.81;  //flat, not moving = 1.59, straight down = 1.29
 //float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
@@ -44,20 +44,21 @@ float range;
 
 void setup()
 {
+	//Start serial communication at required baud
 	Serial.begin(9600);
 	while(!Serial);
-        digitalWrite(ACTUATOR_SL,HIGH);
-        delay(50);
-        digitalWrite(ACTUATOR_SL,LOW);
+		//Short flash to show power on, maybe split to subroutine?
+		digitalWrite(ACTUATOR_SL,HIGH);
+		delay(50);
+		digitalWrite(ACTUATOR_SL,LOW);
 
-        Serial.print("SETUP ROUTINE: ");
-		Serial.println("Apparently I'm powered up v8");
+		Serial.print("SETUP ROUTINE: ");
+		Serial.println("Apparently I'm powered up v9");
 
 	if(!accel.begin())
 	{
-	/* There was a problem detecting the ADXL345 ... check your connections */
-	Serial.println("Ooops, no ADXL345 detected ... Check your wiring!");
-	while(1);
+	Serial.println("Problem detecting the ADXL345 - check connections");
+	while(1); //All this does is fails forever, maybe get it to retry?
 	}
 
 	/* Set the range to whatever is appropriate for your project */
@@ -68,7 +69,7 @@ void setup()
 
 	pinMode(ACTUATOR_SL, OUTPUT);
 	pinMode(SENSOR_UCS, INPUT);
-        //Serial.begin(9600);
+		//Serial.begin(9600);
 	BOOT();
 	TRANSITION_TO_SLEEP();
 	
@@ -80,7 +81,7 @@ void loop()
 	Serial.print("LOOP ROUTINE: ");
 	Serial.println("Monitoring for UCS");
 	//Debouncing done in this function
-	if(digitalRead(SENSOR_UCS) == 0)
+	if(digitalRead(SENSOR_UCS) == 0) //20150715 This monitoring routine isn't implemented as a true Interrupt Service Routine.  It's relying on speed of iteration alone to simulate the effect of an interrupt.  Can this be changed, does the h/w support interrupts?
 	{
 		Serial.println("UCS has been pressed");
 		delay(CONSTANT_DEBOUNCETIME);
@@ -111,10 +112,10 @@ void BOOT()
 	VARIABLE_CURRENT_MODE = "boot";
 	VARIABLE_QUEUE_RANGE = 0;
 	VARIABLE_COMPUTED_PITCHANGLE = 0;
-	VARIABLE_SAMPLE_RATE = 60;
-	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 1;
+	VARIABLE_SAMPLE_RATE = 90; //was 60
+	VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 30; //was 1
 	FIFO_STATUS = 0;
-	
+
 	for(uint8_t i = 0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
 	{
 		VARIABLE_QUEUE_DECELERATION[i] = 0;
@@ -124,7 +125,7 @@ void BOOT()
 void TRANSITION_TO_SLEEP()
 {
 	Serial.println("TRANSITION_TO_SLEEP ROUTINE");
-    VARIABLE_CURRENT_MODE = "transition_to_sleep";
+	VARIABLE_CURRENT_MODE = "transition_to_sleep";
 	SLEEP_SIGNAL();
 	MODE_SLEEP();
 }
@@ -132,7 +133,7 @@ void TRANSITION_TO_SLEEP()
 void MODE_SLEEP()
 {
 	Serial.println("MODE_SLEEP ROUTINE");
-    VARIABLE_CURRENT_MODE = "mode_sleep";
+	VARIABLE_CURRENT_MODE = "mode_sleep";
 }
 
 void TRANSITION_TO_NORMAL()
@@ -149,42 +150,41 @@ void MODE_NORMAL()
 	VARIABLE_CURRENT_MODE = "mode_normal";
 
 	//read sensor data
-    accel.getEvent(&event);  //20150714 can this go into APPEND routine?  And sensors_event_t?  Get rid of a global?
-	
+	accel.getEvent(&event);  //20150714 can this go into APPEND routine?  And sensors_event_t?  Get rid of a global?
+
 	sample_time  = millis();
 	decision_time  = millis(); //20150714 Can I move these out of the subroutines and back into mode_normal to get rid of the globals?
-	
-    Serial.print("FIFO_STATUS: ");
-    Serial.println(FIFO_STATUS);
+
+	Serial.print("FIFO_STATUS: ");
+	Serial.println(FIFO_STATUS);
 	APPEND_SAMPLE_TO_QUEUE(); //subroutine to append reading to queue
 	if(FIFO_STATUS == VARIABLE_QUEUE_DECELERATION_SIZE) //only do arithmetic and accel test when queue is full
 	{
-        CALCULATE_QUEUE_STATISTICS();
+		CALCULATE_QUEUE_STATISTICS();
 		EVALUATE_DECELERATION();
 	}
-	
 }
 
 void APPEND_SAMPLE_TO_QUEUE()
 {
 	Serial.println("APPEND_SAMPLE_TO_QUEUE ROUTINE");
-	
+
 	//Shift FIFO values down one space
 	Serial.println("Queue being updated");
 	for(uint8_t i=VARIABLE_QUEUE_DECELERATION_SIZE-1; i>0; i--) //for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE-1; i++)//was-2
 	{
 		VARIABLE_QUEUE_DECELERATION[i] = VARIABLE_QUEUE_DECELERATION[i-1];
 	}
-	
+
 	//Add new value to beginning of FIFO
-    VARIABLE_QUEUE_DECELERATION[0] = event.acceleration.x;
-    
+	VARIABLE_QUEUE_DECELERATION[0] = event.acceleration.x;
+
 	//print value just added
 	Serial.print("Uncompensated acceleration reading: ");
 	Serial.print(VARIABLE_QUEUE_DECELERATION[0]);
 	Serial.println(" inserted to queue.");
-	
-	//printing queue to screen hopefully
+
+	//printing queue to screen
 	for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)//was-1
 	{
 		Serial.print("|");
@@ -194,66 +194,68 @@ void APPEND_SAMPLE_TO_QUEUE()
 		Serial.print(VARIABLE_QUEUE_DECELERATION[i]);
 	}
 	Serial.println("");
-        //end printing queue
-	
-        //Update FIFO_STATUS
-        if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE)
+
+	//Update FIFO_STATUS
+	if(FIFO_STATUS < VARIABLE_QUEUE_DECELERATION_SIZE)
 	{
-            FIFO_STATUS++;
-        }
+		FIFO_STATUS++;
+	}
+
 	//Maintain fixed sample rate
 	while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
 }
 
 void CALCULATE_QUEUE_STATISTICS()
 {
-    Serial.println("CALCULATE_QUEUE_STATISTICS ROUTINE");
-    //Calculate range and mean of sampled data
-    min_val = VARIABLE_QUEUE_DECELERATION[0];
-    max_val = VARIABLE_QUEUE_DECELERATION[0];
-    mean = VARIABLE_QUEUE_DECELERATION[0];
-	
+	Serial.println("CALCULATE_QUEUE_STATISTICS ROUTINE");
+
+	//Calculate range and mean of sampled data
+	min_val = VARIABLE_QUEUE_DECELERATION[0];
+	max_val = VARIABLE_QUEUE_DECELERATION[0];
+	mean = VARIABLE_QUEUE_DECELERATION[0];
+
 	for(uint8_t i=1; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++) //was: for(uint8_t i=1; i<FIFO_STATUS; i++)
-        {
-            if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
-            {
-                min_val = VARIABLE_QUEUE_DECELERATION[i];
-            }
-            if(VARIABLE_QUEUE_DECELERATION[i] > max_val)
-            {
-                max_val = VARIABLE_QUEUE_DECELERATION[i];
-            }
-            mean = mean + VARIABLE_QUEUE_DECELERATION[i];
-        }
-		
+	{
+		if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
+		{
+			min_val = VARIABLE_QUEUE_DECELERATION[i];
+		}
+		if(VARIABLE_QUEUE_DECELERATION[i] > max_val)
+		{
+			max_val = VARIABLE_QUEUE_DECELERATION[i];
+		}
+		mean = mean + VARIABLE_QUEUE_DECELERATION[i];
+	}
+
 	mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE; //was: mean = mean/FIFO_STATUS;
-    Serial.print("Queue mean: ");
-    Serial.println(mean);
-    range = max_val - min_val;
-    Serial.print("Queue range: ");
-    Serial.println(range);
+	Serial.print("Queue mean: ");
+	Serial.println(mean);
+	range = max_val - min_val;
+	Serial.print("Queue range: ");
+	Serial.println(range);
 }
 
 void EVALUATE_DECELERATION()
 {
-    Serial.println("EVALUATE_DECELERATION ROUTINE");
-    //Determine if event occurred based on mean and range
-    if(range <= CONSTANT_STRAIGHTANDLEVELRANGE)
-    {
+	Serial.println("EVALUATE_DECELERATION ROUTINE");
+
+	//Determine if event occurred based on mean and range
+	if(range <= CONSTANT_STRAIGHTANDLEVELRANGE) //20150715 This if could largely be superseded by an if in an earlier routine, maybe mode normal or calculate statistics, and only the relevant pitch angle/calculate decel code called.
+	{
 		Serial.println("Queue range indicates insignificant deceleration, updating pitch angle");
 		VARIABLE_COMPUTED_PITCHANGLE = asin(mean/CONSTANT_GRAVITY);//*(180/pi);
 		Serial.print("Pitch Angle: ");
 		Serial.println(VARIABLE_COMPUTED_PITCHANGLE);
     //20150714 IS THERE ANY REASON THIS ALWAYS SEEMS TO EVALUATE TO 0.03 ON LAST TEST?
 	}
-    else
-    {
+	else
+	{
 		//20150714 ONLY IF THE DECELERATION IS "SIGNIFICANT" (i.e. range is wide enough) ARE THE DECISIONS MADE TO TURN LIGHT ON OR OFF.  DOESN'T ACCOUNT FOR THE LIKELY POSSIBILITY THAT LIGHT GETS TURNED ON THEN THE RANGE DROPS AND IT NEVER GETS TURNED OFF...
 		Serial.println("Queue range indicates significant deceleration, calculating compensated deceleration");
 		VARIABLE_COMPENSATED_DECELERATION = abs(mean - (CONSTANT_GRAVITY*sin(VARIABLE_COMPUTED_PITCHANGLE)))*cos(VARIABLE_COMPUTED_PITCHANGLE);
 		Serial.print("Compensated deceleration: ");
 		Serial.println(VARIABLE_COMPENSATED_DECELERATION);
-    
+
 		if((VARIABLE_UPDOWN == 0)&&(VARIABLE_COMPENSATED_DECELERATION >= CONSTANT_UPWARD_DT))
 		{
 			Serial.println("Upward");
@@ -264,15 +266,15 @@ void EVALUATE_DECELERATION()
 			Serial.println("Downward");
 			TRANSITION_DEACTIVATE_ACTUATOR_SL();
 		}
-    }
-		
-    while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
+	}
+
+	while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
 }
 
 void TRANSITION_ACTIVATE_ACTUATOR_SL()
 {
 	Serial.println("TRANSITION_ACTIVATE_ACTUATOR_SL ROUTINE");
-//VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
+	//VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
 	BRAKING_SIGNAL_ON();
 	VARIABLE_UPDOWN = 1;
 }
@@ -287,51 +289,51 @@ void TRANSITION_DEACTIVATE_ACTUATOR_SL()
 
 void SLEEP_SIGNAL()
 {
-    Serial.println("SLEEP_SIGNAL ROUTINE");
-    unsigned long time = millis();
-    
-    digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis() - time < 200);
-    digitalWrite(ACTUATOR_SL,LOW);
-    delay(50);
-    digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis() - time < 100);
-    digitalWrite(ACTUATOR_SL,LOW);
-    delay(50);
-    digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis() - time < 50);
-    digitalWrite(ACTUATOR_SL,LOW);
-    while(millis() - time < 1000);
+	Serial.println("SLEEP_SIGNAL ROUTINE");
+	unsigned long time = millis();
+
+	digitalWrite(ACTUATOR_SL,HIGH);
+	while(millis() - time < 200);
+	digitalWrite(ACTUATOR_SL,LOW);
+	delay(50);
+	digitalWrite(ACTUATOR_SL,HIGH);
+	while(millis() - time < 100);
+	digitalWrite(ACTUATOR_SL,LOW);
+	delay(50);
+	digitalWrite(ACTUATOR_SL,HIGH);
+	while(millis() - time < 50);
+	digitalWrite(ACTUATOR_SL,LOW);
+	while(millis() - time < 1000);
 }
 
 void NORMAL_SIGNAL()
 {
-    Serial.println("NORMAL_SIGNAL ROUTINE");
-    unsigned long time = millis();
-    
-    digitalWrite(ACTUATOR_SL,LOW);
-    while(millis() - time < 200);
-    digitalWrite(ACTUATOR_SL,HIGH);
-    delay(50);
-    digitalWrite(ACTUATOR_SL,LOW);
-    while(millis() - time < 100);
-    digitalWrite(ACTUATOR_SL,HIGH);
-    delay(50);
-    digitalWrite(ACTUATOR_SL,LOW);
-    while(millis() - time < 50);
-    digitalWrite(ACTUATOR_SL,HIGH);
-    while(millis() - time < 1000);
-    digitalWrite(ACTUATOR_SL,LOW);
+	Serial.println("NORMAL_SIGNAL ROUTINE");
+	unsigned long time = millis();
+
+	digitalWrite(ACTUATOR_SL,LOW);
+	while(millis() - time < 200);
+	digitalWrite(ACTUATOR_SL,HIGH);
+	delay(50);
+	digitalWrite(ACTUATOR_SL,LOW);
+	while(millis() - time < 100);
+	digitalWrite(ACTUATOR_SL,HIGH);
+	delay(50);
+	digitalWrite(ACTUATOR_SL,LOW);
+	while(millis() - time < 50);
+	digitalWrite(ACTUATOR_SL,HIGH);
+	while(millis() - time < 1000);
+	digitalWrite(ACTUATOR_SL,LOW);
 }
 
 void BRAKING_SIGNAL_ON()
 {
-    Serial.println("BRAKING_SIGNAL_ON ROUTINE");
-    digitalWrite(ACTUATOR_SL,HIGH);
+	Serial.println("BRAKING_SIGNAL_ON ROUTINE");
+	digitalWrite(ACTUATOR_SL,HIGH);
 }
 
 void BRAKING_SIGNAL_OFF()
 {
-    Serial.println("BRAKING_SIGNAL_OFF ROUTINE");
-    digitalWrite(ACTUATOR_SL,LOW);
+	Serial.println("BRAKING_SIGNAL_OFF ROUTINE");
+	digitalWrite(ACTUATOR_SL,LOW);
 }
