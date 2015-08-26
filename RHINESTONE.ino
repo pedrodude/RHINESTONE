@@ -46,7 +46,7 @@ void setup()
 {
 	//Start serial communication at required baud
 	Serial.begin(9600);
-	while(!Serial);
+	//while(!Serial); //commented out for testing
 		//Short flash to show power on, maybe split to subroutine?
 		digitalWrite(ACTUATOR_SL,HIGH);
 		delay(50);
@@ -182,7 +182,7 @@ void APPEND_SAMPLE_TO_QUEUE()
 	//print value just added
 	Serial.print("Uncompensated acceleration reading: ");
 	Serial.print(VARIABLE_QUEUE_DECELERATION[0]);
-	Serial.println(" inserted to queue.");
+	Serial.println(" inserted to queue");
 
 	//printing queue to screen
 	for(uint8_t i=0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)//was-1
