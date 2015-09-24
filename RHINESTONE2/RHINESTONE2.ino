@@ -1,6 +1,8 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
+#include <SPI.h>
+//#include <ADXL345.h>
 #include <Adafruit_NeoPixel.h>
 
 uint8_t neopixel_PIN = 9;
@@ -11,6 +13,9 @@ uint8_t spi_mosi = 16; // aka SDA
 uint8_t spi_cs = 10;
 uint8_t button_PIN = 7;
 
+uint8_t interrupt1 = 4; //pin 7 is interrupt 4, pin 2 is interrupt 1, pin 0 is interrupt 2, and pin 1 is interrupt 3
+uint8_t interrupt2 = 1; //pin 3 maps to interrupt 0
+
 float CONSTANT_UPWARD_DT = 0.65;
 float CONSTANT_DOWNWARD_DT = 0.3;
 long CONSTANT_DEBOUNCETIME = 3000; // in milliseconds
@@ -18,8 +23,9 @@ float CONSTANT_STRAIGHTANDLEVELRANGE = 0.2; //was 0.05
 float CONSTANT_GRAVITY = 9.81;  //flat, not moving = 1.59, straight down = 1.29
 //float CONSTANT_ZERO_READING = 1.59;
 const float pi = 3.14159;
-const uint8_t VARIABLE_QUEUE_DECELERATION_SIZE = 5;
+const uint8_t VARIABLE_QUEUE_DECELERATION_SIZE = 32; //must be less than 32 to use FIFO
 
+int16_t temp_FIFO_int[VARIABLE_QUEUE_DECELERATION_SIZE];
 uint8_t FIFO_STATUS;
 uint8_t VARIABLE_UPDOWN;
 float VARIABLE_COMPENSATED_DECELERATION;
@@ -27,7 +33,7 @@ String VARIABLE_CURRENT_MODE;
 float VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE];
 float VARIABLE_QUEUE_RANGE;
 float VARIABLE_COMPUTED_PITCHANGLE; // in radians.  Arduino trig functions default to radians.
-float VARIABLE_SAMPLE_RATE; // in Hz
+//float VARIABLE_SAMPLE_RATE; // in Hz
 float VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE; // in Hz
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, neopixel_PIN, NEO_GRB + NEO_KHZ800);
@@ -47,21 +53,11 @@ void setup()
   pixels.begin();
 
   Serial.begin(9600);
-  //while (!Serial);
+  while (!Serial);
 
   sensor_t sensor;
   accel.getSensor(&sensor);
-//  Serial.println("------------------------------------");
-//  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
-//  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
-//  Serial.print  ("Read Device ID:  "); Serial.println(accel.getDeviceID());
-//  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
-//  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println(" m/s^2");
-//  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println(" m/s^2");
-//  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println(" m/s^2");  
-//  Serial.println("------------------------------------");
-//  Serial.println("");
-//  delay(500);
+  delay(1000);
   
   if(!accel.begin())
   {
@@ -69,14 +65,19 @@ void setup()
     while(1); //All this does is fails forever, maybe get it to retry?
   }
 
-  /* Set the range to whatever is appropriate for your project */
   accel.setRange(ADXL345_RANGE_4_G);
+  accel.setDataRate(ADXL345_DATARATE_25_HZ);
+  accel.setFIFOMode(ADXL345_FIFO_MODE_FIFO);
+  accel.setFIFOSamples(VARIABLE_QUEUE_DECELERATION_SIZE-1);
+  accel.writeRegister(ADXL345_REG_INT_ENABLE, 0);
+  accel.writeRegister(ADXL345_REG_INT_MAP, 0);
+  accel.writeBits(ADXL345_REG_INT_ENABLE, 1, ADXL345_INT_WATERMARK_BIT, 1);
 
   pixels.setPixelColor(0, pixels.Color(150,150,0)); // Moderately bright green color.
   pixels.show();
 
   pinMode(button_PIN, INPUT);
-  attachInterrupt(4, ISR_function, FALLING); // Interrupt on Pin 7
+  attachInterrupt(interrupt1, pushbutton_ISR, FALLING); // Interrupt on Pin 7
 
   BOOT();
   TRANSITION_TO_SLEEP();
@@ -84,21 +85,11 @@ void setup()
 
 void loop()
 {  
-//  accel.getEvent(&event);
-
-//  Serial.println(event.acceleration.x);
-//  Serial.println(event.acceleration.y);
-//  Serial.println(event.acceleration.z);
-//
-//  delay(2000);
-//  //pixels.setPixelColor(0, pixels.Color(150,150,0)); // Moderately bright green color.
-//  pixels.setPixelColor(0, pixels.Color(int(event.acceleration.x),int(event.acceleration.y),int(event.acceleration.z)));
-//  pixels.show();
 }
 
-void ISR_function()
+void pushbutton_ISR()
 {
-  detachInterrupt(4);
+  detachInterrupt(interrupt1);
   delay(CONSTANT_DEBOUNCETIME);
   if(digitalRead(button_PIN) == 0) //(SENSOR_UCS) == 0)
   {
@@ -112,7 +103,7 @@ void ISR_function()
         TRANSITION_TO_NORMAL();
       }
    }
-   attachInterrupt(4, ISR_function, FALLING); // Interrupt on Pin 7
+   attachInterrupt(interrupt1, pushbutton_ISR, FALLING); // Interrupt on Pin 7
 }
 
 void BOOT()
@@ -123,20 +114,17 @@ void BOOT()
   VARIABLE_CURRENT_MODE = "boot";
   VARIABLE_QUEUE_RANGE = 0;
   VARIABLE_COMPUTED_PITCHANGLE = 0;
-  VARIABLE_SAMPLE_RATE = 90; //was 60
+  //VARIABLE_SAMPLE_RATE = 90; //was 60
   VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE = 30; //was 1
   FIFO_STATUS = 0;
-
-  for(uint8_t i = 0; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++)
-  {
-    VARIABLE_QUEUE_DECELERATION[i] = 0;
-  }
 }
 
 void TRANSITION_TO_SLEEP()
 {
   Serial.println("TRANSITION_TO_SLEEP ROUTINE");
-  VARIABLE_CURRENT_MODE = "transition_to_sleep";
+  detachInterrupt(interrupt2);
+  accel.writeBits(ADXL345_REG_POWER_CTL, 0, ADXL345_PCTL_MEASURE_BIT, 1); 
+  VARIABLE_CURRENT_MODE = "transition_to_sleep";  
   SLEEP_SIGNAL();
   MODE_SLEEP();
 }
@@ -144,7 +132,9 @@ void TRANSITION_TO_SLEEP()
 void TRANSITION_TO_NORMAL()
 {
   Serial.println("TRANSITION_TO_NORMAL ROUTINE");
-  VARIABLE_CURRENT_MODE = "transition_to_normal";
+  attachInterrupt(interrupt2, Read_FIFO_ISR, RISING); // Interrupt on Pin 7
+  accel.writeBits(ADXL345_REG_POWER_CTL, 1, ADXL345_PCTL_MEASURE_BIT, 1);
+  VARIABLE_CURRENT_MODE = "transition_to_normal"; 
   NORMAL_SIGNAL();
   MODE_NORMAL();
 }
@@ -152,22 +142,22 @@ void TRANSITION_TO_NORMAL()
 void MODE_NORMAL()
 {
   Serial.println("MODE_NORMAL ROUTINE");
-  VARIABLE_CURRENT_MODE = "mode_normal";
+  VARIABLE_CURRENT_MODE = "mode_normal";  
+}
 
-  //read sensor data
-  accel.getEvent(&event);  //20150714 can this go into APPEND routine?  And sensors_event_t?  Get rid of a global?
+void Read_FIFO_ISR()
+{
+  detachInterrupt(interrupt2);
 
-  sample_time  = millis();
-  decision_time  = millis(); //20150714 Can I move these out of the subroutines and back into mode_normal to get rid of the globals?
+  Serial.println("FIFO filled");
 
-  Serial.print("FIFO_STATUS: ");
-  Serial.println(FIFO_STATUS);
-  APPEND_SAMPLE_TO_QUEUE(); //subroutine to append reading to queue
-  if(FIFO_STATUS == VARIABLE_QUEUE_DECELERATION_SIZE) //only do arithmetic and accel test when queue is full
+  for(uint8_t i = 0; i<32; i++)
   {
-    CALCULATE_QUEUE_STATISTICS();
-    EVALUATE_DECELERATION();
+    temp_FIFO_int[i] = accel.getX();
   }
+
+  CALCULATE_QUEUE_STATISTICS();
+  attachInterrupt(interrupt2, Read_FIFO_ISR, RISING); // Interrupt on Pin 7
 }
 
 void MODE_SLEEP()
@@ -180,7 +170,6 @@ void SLEEP_SIGNAL()
 {
   Serial.println("SLEEP_SIGNAL ROUTINE");
   unsigned long time = millis();
-
 
   //digitalWrite(ACTUATOR_SL,LOW);
   pixels.setPixelColor(0, pixels.Color(200,0,0)); // Moderately bright green color.
@@ -263,6 +252,23 @@ void BRAKING_SIGNAL_OFF()
   pixels.show();
 }
 
+void TRANSITION_ACTIVATE_ACTUATOR_SL()
+{
+  Serial.println("TRANSITION_ACTIVATE_ACTUATOR_SL ROUTINE");
+  //VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
+  BRAKING_SIGNAL_ON();
+  VARIABLE_UPDOWN = 1;
+}
+
+void TRANSITION_DEACTIVATE_ACTUATOR_SL()
+{
+  Serial.println("TRANSITION_DEACTIVATE_ACTUATOR_SL ROUTINE");
+  //VARIABLE_CURRENT_MODE = "transition_deactivate_actuator_sl";
+  BRAKING_SIGNAL_OFF();
+  VARIABLE_UPDOWN = 0;
+}
+
+/*
 void APPEND_SAMPLE_TO_QUEUE()
 {
   Serial.println("APPEND_SAMPLE_TO_QUEUE ROUTINE");
@@ -302,27 +308,32 @@ void APPEND_SAMPLE_TO_QUEUE()
   //Maintain fixed sample rate
   while((millis() - sample_time) < (1000/VARIABLE_SAMPLE_RATE));
 }
+*/
 
 void CALCULATE_QUEUE_STATISTICS()
 {
   Serial.println("CALCULATE_QUEUE_STATISTICS ROUTINE");
+  float temp_val = temp_FIFO_int[0] * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
 
   //Calculate range and mean of sampled data
-  min_val = VARIABLE_QUEUE_DECELERATION[0];
-  max_val = VARIABLE_QUEUE_DECELERATION[0];
-  mean = VARIABLE_QUEUE_DECELERATION[0];
+  min_val = temp_val;
+  max_val = temp_val;
+  mean = temp_val;
 
   for(uint8_t i=1; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++) //was: for(uint8_t i=1; i<FIFO_STATUS; i++)
   {
-    if(VARIABLE_QUEUE_DECELERATION[i] < min_val)
+    //Serial.println(temp_val);
+    //delay(1000);
+    temp_val = temp_FIFO_int[i] * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+    if(temp_val < min_val)
     {
-      min_val = VARIABLE_QUEUE_DECELERATION[i];
+      min_val = temp_val;
     }
-    if(VARIABLE_QUEUE_DECELERATION[i] > max_val)
+    if(temp_val > max_val)
     {
-      max_val = VARIABLE_QUEUE_DECELERATION[i];
+      max_val = temp_val;
     }
-    mean = mean + VARIABLE_QUEUE_DECELERATION[i];
+    mean = mean + temp_val;
   }
 
   mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE; //was: mean = mean/FIFO_STATUS;
@@ -367,21 +378,5 @@ void EVALUATE_DECELERATION()
   }
 
   while((millis() - decision_time) < (1000/VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE));
-}
-
-void TRANSITION_ACTIVATE_ACTUATOR_SL()
-{
-  Serial.println("TRANSITION_ACTIVATE_ACTUATOR_SL ROUTINE");
-  //VARIABLE_CURRENT_MODE = "transition_activate_actuator_sl";
-  BRAKING_SIGNAL_ON();
-  VARIABLE_UPDOWN = 1;
-}
-
-void TRANSITION_DEACTIVATE_ACTUATOR_SL()
-{
-  Serial.println("TRANSITION_DEACTIVATE_ACTUATOR_SL ROUTINE");
-  //VARIABLE_CURRENT_MODE = "transition_deactivate_actuator_sl";
-  BRAKING_SIGNAL_OFF();
-  VARIABLE_UPDOWN = 0;
 }
 
