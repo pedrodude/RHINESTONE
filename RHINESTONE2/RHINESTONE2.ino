@@ -1,3 +1,5 @@
+//TBR present
+
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
@@ -11,7 +13,7 @@ uint8_t spi_clock = 15; // aka SCL
 uint8_t spi_miso = 14; // aka SDO
 uint8_t spi_mosi = 16; // aka SDA
 uint8_t spi_cs = 10;
-uint8_t button_PIN = 7;
+uint8_t button_PIN = 7; //TBR How does this relate to the next comment?  Is there a table of interrupts mapped to pins?
 
 uint8_t interrupt1 = 4; //pin 7 is interrupt 4, pin 2 is interrupt 1, pin 0 is interrupt 2, and pin 1 is interrupt 3
 uint8_t interrupt2 = 1; //pin 3 maps to interrupt 0
@@ -32,7 +34,7 @@ float VARIABLE_COMPENSATED_DECELERATION;
 String VARIABLE_CURRENT_MODE;
 float VARIABLE_QUEUE_DECELERATION[VARIABLE_QUEUE_DECELERATION_SIZE];
 float VARIABLE_QUEUE_RANGE;
-float VARIABLE_COMPUTED_PITCHANGLE; // in radians.  Arduino trig functions default to radians.
+float VARIABLE_COMPUTED_PITCHANGLE; // in radians.  Arduino trig functions default to radians.  //Does the trig require degrees or will radians produce the same result?
 //float VARIABLE_SAMPLE_RATE; // in Hz
 float VARIABLE_STRAIGHTANDLEVEL_DECISION_RATE; // in Hz
 
@@ -66,12 +68,12 @@ void setup()
   }
 
   accel.setRange(ADXL345_RANGE_4_G);
-  accel.setDataRate(ADXL345_DATARATE_25_HZ);
-  accel.setFIFOMode(ADXL345_FIFO_MODE_FIFO);
+  accel.setDataRate(ADXL345_DATARATE_25_HZ); //TBR Out of interest, why this data rate?  Any tradeoffs with higher or lower data rates (energy usage, etc)?
+  accel.setFIFOMode(ADXL345_FIFO_MODE_FIFO); //TBR Should this be ADXL345_FIFO_MODE_STREAM?  We want oldest values to be overwritten.
   accel.setFIFOSamples(VARIABLE_QUEUE_DECELERATION_SIZE-1);
   accel.writeRegister(ADXL345_REG_INT_ENABLE, 0);
   accel.writeRegister(ADXL345_REG_INT_MAP, 0);
-  accel.writeBits(ADXL345_REG_INT_ENABLE, 1, ADXL345_INT_WATERMARK_BIT, 1);
+  accel.writeBits(ADXL345_REG_INT_ENABLE, 1, ADXL345_INT_WATERMARK_BIT, 1); 
 
   pixels.setPixelColor(0, pixels.Color(150,150,0)); // Moderately bright green color.
   pixels.show();
@@ -123,7 +125,7 @@ void TRANSITION_TO_SLEEP()
 {
   Serial.println("TRANSITION_TO_SLEEP ROUTINE");
   detachInterrupt(interrupt2);
-  accel.writeBits(ADXL345_REG_POWER_CTL, 0, ADXL345_PCTL_MEASURE_BIT, 1); 
+  accel.writeBits(ADXL345_REG_POWER_CTL, 0, ADXL345_PCTL_MEASURE_BIT, 1);  //TBR Could these hardcoded bits be given variable/constant names to be a bit more intuitive?
   VARIABLE_CURRENT_MODE = "transition_to_sleep";  
   SLEEP_SIGNAL();
   MODE_SLEEP();
@@ -132,8 +134,8 @@ void TRANSITION_TO_SLEEP()
 void TRANSITION_TO_NORMAL()
 {
   Serial.println("TRANSITION_TO_NORMAL ROUTINE");
-  attachInterrupt(interrupt2, Read_FIFO_ISR, RISING); // Interrupt on Pin 7
-  accel.writeBits(ADXL345_REG_POWER_CTL, 1, ADXL345_PCTL_MEASURE_BIT, 1);
+  attachInterrupt(interrupt2, Read_FIFO_ISR, RISING); // Interrupt on Pin 7 //TBR Isn't this interrupt on pin 2?
+  accel.writeBits(ADXL345_REG_POWER_CTL, 1, ADXL345_PCTL_MEASURE_BIT, 1); //TBR These also should be named as variables
   VARIABLE_CURRENT_MODE = "transition_to_normal"; 
   NORMAL_SIGNAL();
   MODE_NORMAL();
@@ -145,19 +147,19 @@ void MODE_NORMAL()
   VARIABLE_CURRENT_MODE = "mode_normal";  
 }
 
-void Read_FIFO_ISR()
+void Read_FIFO_ISR() //TBR unsure of the nomenclature here.  In what situations is this ISR called?
 {
   detachInterrupt(interrupt2);
 
   Serial.println("FIFO filled");
 
-  for(uint8_t i = 0; i<32; i++)
+  for(uint8_t i = 0; i<32; i++) //TBR Should this 32 be replaced with VARIABLE_QUEUE_DECELERATION_SIZE?
   {
-    temp_FIFO_int[i] = accel.getX();
+    temp_FIFO_int[i] = accel.getX(); //TBR What is the purpose of this forloop?  It looks like the entire queue is being overwritten entirely with what would effectively be almost identical acceleration values?
   }
 
   CALCULATE_QUEUE_STATISTICS();
-  attachInterrupt(interrupt2, Read_FIFO_ISR, RISING); // Interrupt on Pin 7
+  attachInterrupt(interrupt2, Read_FIFO_ISR, RISING); // Interrupt on Pin 7 //TBR Isn't this interrupt on pin 2?
 }
 
 void MODE_SLEEP()
@@ -168,15 +170,15 @@ void MODE_SLEEP()
 
 void SLEEP_SIGNAL()
 {
-  Serial.println("SLEEP_SIGNAL ROUTINE");
+  Serial.println("SLEEP_SIGNAL ROUTINE");  //TBR This is 3 progressively shorter flashes?
   unsigned long time = millis();
 
   //digitalWrite(ACTUATOR_SL,LOW);
   pixels.setPixelColor(0, pixels.Color(200,0,0)); // Moderately bright green color.
   pixels.show();
-  while(millis() - time < 200);
+  while(millis() - time < 200); //TBR Perhaps convert to variables?
   //digitalWrite(ACTUATOR_SL,HIGH);
-  pixels.setPixelColor(0, pixels.Color(0,0,0)); // Moderately bright green color.
+  pixels.setPixelColor(0, pixels.Color(0,0,0)); // Moderately bright green color. //TBR Is this actually off?
   pixels.show();
   delay(50);
   
@@ -202,11 +204,11 @@ void SLEEP_SIGNAL()
 
 void NORMAL_SIGNAL()
 {
-  Serial.println("NORMAL_SIGNAL ROUTINE");
+  Serial.println("NORMAL_SIGNAL ROUTINE");  //TBR This is 3 flashes of equal length with shorter delay in between?
   unsigned long time = millis();
 
   //digitalWrite(ACTUATOR_SL,LOW);
-  pixels.setPixelColor(0, pixels.Color(0,0,0)); // Moderately bright green color.
+  pixels.setPixelColor(0, pixels.Color(0,0,0)); // Moderately bright green color.  //TBR Isn't this off?
   pixels.show();
   while(millis() - time < 200);
   //digitalWrite(ACTUATOR_SL,HIGH);
@@ -313,12 +315,12 @@ void APPEND_SAMPLE_TO_QUEUE()
 void CALCULATE_QUEUE_STATISTICS()
 {
   Serial.println("CALCULATE_QUEUE_STATISTICS ROUTINE");
-  float temp_val = temp_FIFO_int[0] * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+  float temp_val = temp_FIFO_int[0] * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD; //TBR check arithmetic here
 
   //Calculate range and mean of sampled data
-  min_val = temp_val;
-  max_val = temp_val;
-  mean = temp_val;
+  min_val = temp_val;	//TBR this is the only one that shouldn't be initialised to zero, but surely there must be a better way to initialise 
+  max_val = temp_val;	//TBR this one doesn't need to be assigned, already initialised to zero
+  mean = temp_val;	//TBR this one doesn't need to be assigned, already initialised to zero
 
   for(uint8_t i=1; i<VARIABLE_QUEUE_DECELERATION_SIZE; i++) //was: for(uint8_t i=1; i<FIFO_STATUS; i++)
   {
@@ -333,7 +335,7 @@ void CALCULATE_QUEUE_STATISTICS()
     {
       max_val = temp_val;
     }
-    mean = mean + temp_val;
+    mean = mean + temp_val;  //TBR New value for mean to differentiate?
   }
 
   mean = mean/VARIABLE_QUEUE_DECELERATION_SIZE; //was: mean = mean/FIFO_STATUS;
@@ -344,7 +346,7 @@ void CALCULATE_QUEUE_STATISTICS()
   Serial.println(range);
 }
 
-void EVALUATE_DECELERATION()
+void EVALUATE_DECELERATION()  //TBR Never actually called that I can see?
 {
   Serial.println("EVALUATE_DECELERATION ROUTINE");
 
